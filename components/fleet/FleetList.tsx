@@ -4,14 +4,14 @@ import CircleIcon from "@mui/icons-material/Circle";
 import DirectionsCarRoundedIcon from "@mui/icons-material/DirectionsCarRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import { Box, Button, Chip, InputAdornment, TextField, Typography } from "@mui/material";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import { getVehicleMarkerColor } from "@/lib/fleet-appearance";
 import { useUiPreferences } from "@/components/providers/MuiProvider";
 import { useFleetStore } from "@/stores/use-fleet-store";
 import type { FleetStatusFilter, VehicleStatus } from "@/types/fleet";
 
-const TABLE_LIMIT = 80;
+const PAGE_SIZE = 80;
 
 export default function FleetList() {
   const vehicles = useFleetStore((state) => state.vehicles);
@@ -21,18 +21,20 @@ export default function FleetList() {
   const setStatusFilter = useFleetStore((state) => state.setStatusFilter);
   const { locale, t } = useUiPreferences();
   const [query, setQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const deferredVehicles = useDeferredValue(vehicles);
   const statusCounts = useMemo(() => {
     const counts: Record<FleetStatusFilter, number> = { all: 0, moving: 0, stopped: 0, offline: 0 };
     for (const vehicle of deferredVehicles) { counts.all += 1; counts[vehicle.status] += 1; }
     return counts;
   }, [deferredVehicles]);
-  const visibleVehicles = useMemo(() => {
+  const matchedVehicles = useMemo(() => {
     const byStatus = statusFilter === "all" ? deferredVehicles : deferredVehicles.filter((vehicle) => vehicle.status === statusFilter);
     const normalizedQuery = query.trim().toLowerCase();
-    const matches = normalizedQuery ? byStatus.filter((vehicle) => vehicle.code.toLowerCase().includes(normalizedQuery) || vehicle.label.toLowerCase().includes(normalizedQuery)) : byStatus;
-    return matches.slice(0, TABLE_LIMIT);
+    return normalizedQuery ? byStatus.filter((vehicle) => vehicle.code.toLowerCase().includes(normalizedQuery) || vehicle.label.toLowerCase().includes(normalizedQuery)) : byStatus;
   }, [deferredVehicles, query, statusFilter]);
+  const visibleVehicles = useMemo(() => matchedVehicles.slice(0, visibleCount), [matchedVehicles, visibleCount]);
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [query, statusFilter]);
   const statusCopy: Record<VehicleStatus, string> = { moving: t("moving"), stopped: locale === "th" ? "หยุด" : "Stopped", offline: locale === "th" ? "ออฟไลน์" : "Offline" };
   const filterOptions: { value: FleetStatusFilter; label: string }[] = [{ value: "all", label: t("all") }, { value: "moving", label: t("moving") }, { value: "stopped", label: locale === "th" ? "หยุด" : "Stopped" }, { value: "offline", label: locale === "th" ? "ออฟไลน์" : "Offline" }];
 
@@ -45,11 +47,11 @@ export default function FleetList() {
       </Box>
 
       <TextField value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} size="small" fullWidth sx={{ mt: { xs: 1.25, sm: 2.25 }, "& .MuiOutlinedInput-root": { bgcolor: "background.default", borderRadius: 1.5, fontSize: "0.78rem", "& fieldset": { borderColor: "divider" } } }} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small" /></InputAdornment> } }} />
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: { xs: 1.25, sm: 2.25 }, mb: 0.75 }}><Typography sx={{ fontSize: "0.7rem", fontWeight: 900, letterSpacing: "0.08em", color: "text.secondary", textTransform: "uppercase" }}>{t("vehicleData")}</Typography><Typography sx={{ px: 0.75, py: 0.3, borderRadius: 1.5, bgcolor: "rgba(22,119,255,0.08)", fontSize: "0.64rem", fontWeight: 800, color: "primary.main" }}>{t("showing")} {visibleVehicles.length}</Typography></Box>
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: { xs: 1.25, sm: 2.25 }, mb: 0.75 }}><Typography sx={{ fontSize: "0.7rem", fontWeight: 900, letterSpacing: "0.08em", color: "text.secondary", textTransform: "uppercase" }}>{t("vehicleData")}</Typography><Typography sx={{ px: 0.75, py: 0.3, borderRadius: 1.5, bgcolor: "rgba(22,119,255,0.08)", fontSize: "0.64rem", fontWeight: 800, color: "primary.main" }}>{t("showing")} {visibleVehicles.length} / {matchedVehicles.length}</Typography></Box>
 
       <Box role="table" aria-label="ตารางข้อมูลรถจำลอง" sx={{ minHeight: 0, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 1, border: "1px solid", borderColor: "rgba(22,119,255,0.10)", bgcolor: "rgba(22,119,255,0.035)" }}>
         <Box role="row" sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr) minmax(80px, .72fr)", sm: "minmax(0, 1.3fr) minmax(86px, .86fr) 70px" }, alignItems: "center", gap: 0.75, flexShrink: 0, px: { xs: 1, sm: 1.25 }, py: 1.05, bgcolor: "rgba(22,119,255,0.07)" }}><Typography role="columnheader" sx={{ fontSize: "0.61rem", fontWeight: 900, letterSpacing: "0.075em", color: "text.secondary" }}>{t("vehicle").toUpperCase()}</Typography><Typography role="columnheader" sx={{ fontSize: "0.61rem", fontWeight: 900, letterSpacing: "0.075em", color: "text.secondary" }}>{t("status").toUpperCase()}</Typography><Typography role="columnheader" align="right" sx={{ display: { xs: "none", sm: "block" }, fontSize: "0.61rem", fontWeight: 900, letterSpacing: "0.075em", color: "text.secondary" }}>{t("speed").toUpperCase()}</Typography></Box>
-        <Box role="rowgroup" sx={{ minHeight: 0, flex: 1, overflowY: "auto", overscrollBehavior: "contain", scrollbarWidth: "thin", scrollbarColor: "rgba(22,119,255,0.32) transparent", "&::-webkit-scrollbar": { width: 9 }, "&::-webkit-scrollbar-track": { bgcolor: "transparent" }, "&::-webkit-scrollbar-thumb": { border: "3px solid transparent", borderRadius: 9, bgcolor: "rgba(22,119,255,0.32)", backgroundClip: "content-box" }, "&::-webkit-scrollbar-thumb:hover": { bgcolor: "rgba(22,119,255,0.48)" } }}>
+        <Box role="rowgroup" onScroll={(event) => { const list = event.currentTarget; const remaining = list.scrollHeight - list.scrollTop - list.clientHeight; if (remaining < 160 && visibleVehicles.length < matchedVehicles.length) { setVisibleCount((count) => Math.min(count + PAGE_SIZE, matchedVehicles.length)); } }} sx={{ minHeight: 0, flex: 1, overflowY: "auto", overscrollBehavior: "contain", scrollbarWidth: "thin", scrollbarColor: "rgba(22,119,255,0.32) transparent", "&::-webkit-scrollbar": { width: 9 }, "&::-webkit-scrollbar-track": { bgcolor: "transparent" }, "&::-webkit-scrollbar-thumb": { border: "3px solid transparent", borderRadius: 9, bgcolor: "rgba(22,119,255,0.32)", backgroundClip: "content-box" }, "&::-webkit-scrollbar-thumb:hover": { bgcolor: "rgba(22,119,255,0.48)" } }}>
           {visibleVehicles.map((vehicle) => {
             const selected = vehicle.id === selectedVehicleId;
             return <Box key={vehicle.id} component="button" type="button" role="row" onClick={() => setSelectedVehicleId(vehicle.id)} sx={{ display: "grid", width: "100%", gridTemplateColumns: { xs: "minmax(0, 1fr) minmax(80px, .72fr)", sm: "minmax(0, 1.3fr) minmax(86px, .86fr) 70px" }, alignItems: "center", gap: 0.75, px: { xs: 1, sm: 1.25 }, py: { xs: 0.85, sm: 1.05 }, border: 0, borderBottom: "1px solid", borderColor: "rgba(22,119,255,0.08)", bgcolor: selected ? "rgba(22,119,255,0.12)" : "transparent", color: "inherit", textAlign: "left", cursor: "pointer", transition: "background 160ms ease, transform 160ms ease", "&:hover": { bgcolor: selected ? "rgba(22,119,255,0.15)" : "rgba(22,119,255,0.07)" }, "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: -2 } }}>
@@ -58,6 +60,7 @@ export default function FleetList() {
               <Typography role="cell" align="right" sx={{ display: { xs: "none", sm: "block" }, fontSize: "0.7rem", fontWeight: 900, color: "text.primary", whiteSpace: "nowrap" }}>{vehicle.speedKph}<Box component="span" sx={{ ml: 0.25, fontSize: "0.58rem", fontWeight: 700, color: "text.secondary" }}>km/h</Box></Typography>
             </Box>;
           })}
+          {visibleVehicles.length < matchedVehicles.length && <Box role="status" sx={{ px: 1.25, py: 1.1, textAlign: "center", color: "text.secondary", fontSize: "0.66rem", fontWeight: 700 }}>เลื่อนเพื่อโหลดรถเพิ่ม</Box>}
         </Box>
       </Box>
     </Box>
