@@ -8,6 +8,9 @@
 
 BEGIN;
 
+CREATE SCHEMA IF NOT EXISTS "map-maker-db";
+SET search_path TO "map-maker-db", public;
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TYPE connection_status AS ENUM ('online', 'stale', 'offline');
