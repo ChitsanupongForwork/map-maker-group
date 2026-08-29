@@ -13,6 +13,7 @@ type FleetState = {
   setDetailsOpen: (open: boolean) => void;
   replaceVehicles: (vehicles: FleetVehicle[]) => void;
   applyVehicleUpdates: (updates: FleetVehicle[]) => void;
+  removeVehicle: (id: string) => void;
 };
 
 export const useFleetStore = create<FleetState>((set) => ({
@@ -30,13 +31,18 @@ export const useFleetStore = create<FleetState>((set) => ({
   applyVehicleUpdates: (updates) => set((state) => {
     if (updates.length === 0) return state;
     const updatesById = new Map(updates.map((vehicle) => [vehicle.id, vehicle]));
-    let changed = false;
+    const existingIds = new Set(state.vehicles.map((vehicle) => vehicle.id));
     const vehicles = state.vehicles.map((vehicle) => {
       const update = updatesById.get(vehicle.id);
       if (!update) return vehicle;
-      changed = true;
       return update;
     });
-    return changed ? { vehicles } : state;
+    for (const update of updates) if (!existingIds.has(update.id)) vehicles.push(update);
+    vehicles.sort((left, right) => left.code.localeCompare(right.code));
+    return { vehicles };
+  }),
+  removeVehicle: (id) => set((state) => {
+    const vehicles = state.vehicles.filter((vehicle) => vehicle.id !== id);
+    return { vehicles, selectedVehicleId: state.selectedVehicleId === id ? vehicles[0]?.id ?? "" : state.selectedVehicleId };
   }),
 }));
