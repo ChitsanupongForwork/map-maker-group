@@ -1,14 +1,38 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap");
 @import "tailwindcss";
 
-:root { --background: #f4f9ff; --foreground: #102a43; --surface: #ffffff; --surface-muted: #edf6ff; --border: #d9e7f5; --text-secondary: #5e7590; --cluster-center: #ffffff; }
-:root[data-theme="dark"] { --background: #101b2d; --foreground: #edf6ff; --surface: #172842; --surface-muted: #1e3553; --border: #294565; --text-secondary: #b8c9de; --cluster-center: #172842; }
+/* Mirrors lib/design-tokens.ts. Keep the two in step: TypeScript owns the
+   values the components read, this file owns what Leaflet and plain CSS read. */
+:root {
+  --map-ground: #eef1f4;
+  --chrome: #ffffff;
+  --panel: rgba(255, 255, 255, 0.86);
+  --panel-solid: #ffffff;
+  --line: rgba(20, 30, 45, 0.1);
+  --text-1: #10161f;
+  --text-2: #5a6675;
+  --text-3: #8a94a3;
+  --accent: #c2410c;
+  --tile-filter: none;
+}
+
+:root[data-theme="dark"] {
+  --map-ground: #0a0d12;
+  --chrome: #0b0f14;
+  --panel: rgba(11, 15, 20, 0.8);
+  --panel-solid: #0e141b;
+  --line: rgba(120, 150, 180, 0.16);
+  --text-1: #e6ebf2;
+  --text-2: #93a0b2;
+  --text-3: #6d7a8c;
+  --accent: #e9532f;
+  --tile-filter: invert(1) hue-rotate(180deg) brightness(0.94) contrast(0.86) saturate(0.62);
+}
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: "IBM Plex Sans Thai", Arial, Helvetica, sans-serif;
-  --font-mono: "Courier New", monospace;
+  --color-background: var(--map-ground);
+  --color-foreground: var(--text-1);
+  --font-sans: var(--font-body), Arial, Helvetica, sans-serif;
+  --font-mono: var(--font-data), ui-monospace, monospace;
 }
 
 html,
@@ -17,18 +41,140 @@ body {
 }
 
 body {
-  background: radial-gradient(circle at 96% -10%, rgba(84, 176, 255, 0.20), transparent 30rem), radial-gradient(circle at 42% 115%, rgba(129, 219, 255, 0.13), transparent 32rem), var(--background);
-  color: var(--foreground);
-  font-family: "IBM Plex Sans Thai", Arial, Helvetica, sans-serif;
+  background: var(--map-ground);
+  color: var(--text-1);
+  font-family: var(--font-body), Arial, Helvetica, sans-serif;
 }
 
-.leaflet-container { font-family: "IBM Plex Sans Thai", Arial, Helvetica, sans-serif; }
-:root[data-theme="dark"] .leaflet-container { filter: brightness(0.78) saturate(0.78); }
-.fleet-vehicle-marker { background: transparent; border: 0; }
-.fleet-vehicle-marker__body { display: grid; place-items: center; width: 28px; height: 28px; color: var(--vehicle-color); filter: drop-shadow(0 4px 5px rgba(34, 32, 58, 0.32)); }
-.fleet-vehicle-marker__body svg { width: 28px; height: 32px; overflow: visible; transform: rotate(var(--heading-deg)); transform-origin: center; }
-.fleet-vehicle-marker__body path { fill: currentColor; stroke: #fff; stroke-linejoin: round; stroke-width: 2.5; }
-.fleet-vehicle-marker__body--selected { box-shadow: 0 0 0 4px rgba(22, 119, 255, 0.25), 0 4px 11px rgba(15, 46, 77, 0.22); }
-.fleet-cluster { display: grid; place-items: center; background: transparent; border: 0; }
-.fleet-cluster__ring { display: grid; place-items: center; width: 54px; height: 54px; padding: 5px; border: 2px solid rgba(255,255,255,0.96); border-radius: 50%; background: var(--cluster-pie); box-shadow: 0 8px 20px rgba(15, 46, 77, 0.24), 0 0 0 4px rgba(255,255,255,0.36); }
-.fleet-cluster__ring strong { display: grid; place-items: center; width: 100%; height: 100%; border: 1px solid rgba(22,119,255,0.10); border-radius: 50%; background: var(--cluster-center); color: #1269DE; font-size: 12px; font-weight: 900; box-shadow: inset 0 1px 0 rgba(255,255,255,0.78); }
+/* ---------- map ---------- */
+
+.leaflet-container {
+  font-family: var(--font-body), Arial, Helvetica, sans-serif;
+  background: var(--map-ground);
+}
+
+/* Only the tile pane is filtered. Filtering the whole container would invert
+   marker colors too, and every status color would come out wrong. */
+.leaflet-tile-pane {
+  filter: var(--tile-filter);
+}
+
+.leaflet-control-attribution {
+  background: var(--panel) !important;
+  color: var(--text-3) !important;
+  backdrop-filter: blur(6px);
+}
+
+.leaflet-control-attribution a {
+  color: var(--text-2) !important;
+}
+
+/* ---------- vehicle markers ---------- */
+
+.fv-marker {
+  position: relative;
+  background: transparent;
+  border: 0;
+}
+
+/* Centred on both axes against the icon anchor. `margin: auto` only centres
+   horizontally, which left the arrow floating above its real position. */
+.fv-marker__arrow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  color: var(--fv-color);
+  transform: translate(-50%, -50%) rotate(var(--fv-heading));
+  transform-origin: center;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.45));
+}
+
+.fv-marker__arrow path {
+  fill: currentColor;
+}
+
+.fv-marker--selected .fv-marker__arrow path {
+  stroke: #fff;
+  stroke-width: 0.7;
+  stroke-linejoin: round;
+}
+
+/* An offline vehicle reports no heading, so drawing an arrow would invent one. */
+.fv-marker__dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--fv-color);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+}
+
+.fv-marker__halo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  pointer-events: none;
+}
+
+/* Markers are reused between ticks, so their position can be interpolated.
+   1800ms against a 2s tick reads as continuous movement. */
+.fv-animated {
+  transition: transform 1800ms linear;
+}
+
+/* Leaflet re-transforms every marker while zooming; animating that would drag
+   the whole fleet across the screen. */
+.leaflet-zoom-anim .fv-animated {
+  transition: none;
+}
+
+/* ---------- clusters ---------- */
+
+.fv-cluster {
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+}
+
+.fv-cluster__glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--fv-glow);
+  height: var(--fv-glow);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--fv-color) 26%, transparent), transparent 70%);
+  pointer-events: none;
+}
+
+.fv-cluster__count {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--fv-color) 50%, transparent);
+  border-radius: 50%;
+  background: var(--panel-solid);
+  color: var(--fv-color);
+  font-family: var(--font-data), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fv-animated {
+    transition: none;
+  }
+}

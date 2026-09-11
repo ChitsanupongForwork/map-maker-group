@@ -21,3 +21,23 @@ export type FleetVehicle = {
   lng: number;
   lastUpdate: string;
 };
+
+/** One stored GPS reading from `position_events`, as the history page plays it. */
+export type TrackPoint = {
+  /** ISO timestamp; the playback clock runs on this, not on the array index. */
+  t: string;
+  lat: number;
+  lng: number;
+  speedKph: number;
+  headingDeg: number;
+  accOn: boolean;
+};
+
+export type VehicleHistory = {
+  vehicleId: string;
+  from: string;
+  to: string;
+  /** The API clipped the window at its per-request point cap. */
+  truncated: boolean;
+  points: TrackPoint[];
+};

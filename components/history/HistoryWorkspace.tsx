@@ -1,72 +1,297 @@
 "use client";
 
-import DirectionsCarRoundedIcon from "@mui/icons-material/DirectionsCarRounded";
-import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
-import { Box, Chip, Typography } from "@mui/material";
+import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
+import MyLocationRoundedIcon from "@mui/icons-material/MyLocationRounded";
+import { Box, CircularProgress, Tooltip, Typography } from "@mui/material";
+import dynamic from "next/dynamic";
+import { useEffect, useRef } from "react";
 
-import { getVehicleMarkerColor } from "@/lib/fleet-appearance";
+import HistoryPlayback from "@/components/history/HistoryPlayback";
+import PlaybackDeck from "@/components/history/PlaybackDeck";
+import TrackpointList from "@/components/history/TrackpointList";
+import VehiclePicker from "@/components/history/VehiclePicker";
 import AppSidebar from "@/components/layout/AppSidebar";
-import HeaderControls from "@/components/layout/HeaderControls";
 import { useUiPreferences } from "@/components/providers/MuiProvider";
+import { fleetMotion, fleetTokens, panelTransition, reopenTransition } from "@/lib/design-tokens";
+import { speedBandColors } from "@/lib/fleet-appearance";
 import { useFleetStore } from "@/stores/use-fleet-store";
+import { todayKey, useHistoryStore } from "@/stores/use-history-store";
 
-const colors = { updated: "#1677FF", moving: "#16A34A", stopped: "#F97316", offline: "#64748B" } as const;
+const HistoryMap = dynamic(() => import("@/components/history/HistoryMap"), {
+  ssr: false,
+  loading: () => (
+    <Box sx={{ height: "100%", display: "grid", placeItems: "center" }}>
+      <CircularProgress size={26} />
+    </Box>
+  ),
+});
 
+/**
+ * Playback of one vehicle's recorded track, on the same map and the same theme
+ * as the realtime page. Like that page, nothing is docked beside the map: the
+ * controls, the trackpoint table and the read-outs all float over it, so the
+ * route never changes size because a panel opened.
+ */
 export default function HistoryWorkspace() {
-  const { locale, t } = useUiPreferences();
+  const { locale, mode, t } = useUiPreferences();
+  const tokens = fleetTokens[mode];
+
   const vehicles = useFleetStore((state) => state.vehicles);
   const selectedVehicleId = useFleetStore((state) => state.selectedVehicleId);
   const setSelectedVehicleId = useFleetStore((state) => state.setSelectedVehicleId);
-  const vehicle = vehicles.find((item) => item.id === selectedVehicleId) ?? vehicles[0];
-  const vehicleHistory = locale === "th" ? [
-    { day: "วันนี้", time: "10:42", title: t("updated"), detail: "รับตำแหน่งล่าสุดจากอุปกรณ์จำลอง", kind: "updated" }, { day: "วันนี้", time: "10:21", title: "สถานะเปลี่ยนเป็นกำลังเคลื่อนที่", detail: "ความเร็วจำลองเริ่มส่งเข้าหน้าจอ", kind: "moving" }, { day: "เมื่อวาน", time: "17:16", title: t("stopped"), detail: "ความเร็วจำลองเป็น 0 km/h", kind: "stopped" }, { day: "เมื่อวาน", time: "15:48", title: t("connected"), detail: "รับสัญญาณจากอุปกรณ์จำลองอีกครั้ง", kind: "updated" }, { day: "27 ส.ค.", time: "09:08", title: t("offline"), detail: "ใช้เพื่อสาธิตสถานะรถ ไม่ใช่ข้อมูล GPS จริง", kind: "offline" },
-  ] as const : [
-    { day: "Today", time: "10:42", title: t("updated"), detail: "Received the latest position from the simulator.", kind: "updated" }, { day: "Today", time: "10:21", title: "Status changed to moving", detail: "Simulated speed is now available on the dashboard.", kind: "moving" }, { day: "Yesterday", time: "17:16", title: t("stopped"), detail: "Simulated speed reached 0 km/h.", kind: "stopped" }, { day: "Yesterday", time: "15:48", title: t("connected"), detail: "The simulated device is sending data again.", kind: "updated" }, { day: "Aug 27", time: "09:08", title: t("offline"), detail: "For demonstration only; no actual GPS data is used.", kind: "offline" },
-  ] as const;
+  const connectionStatus = useFleetStore((state) => state.connectionStatus);
+
+  const vehicleId = useHistoryStore((state) => state.vehicleId);
+  const from = useHistoryStore((state) => state.from);
+  const to = useHistoryStore((state) => state.to);
+  const status = useHistoryStore((state) => state.status);
+  const track = useHistoryStore((state) => state.track);
+  const index = useHistoryStore((state) => state.index);
+  const truncated = useHistoryStore((state) => state.truncated);
+  const inspectorOpen = useHistoryStore((state) => state.inspectorOpen);
+  const followCamera = useHistoryStore((state) => state.followCamera);
+  const playheadOffscreen = useHistoryStore((state) => state.playheadOffscreen);
+  const setVehicleId = useHistoryStore((state) => state.setVehicleId);
+  const setRange = useHistoryStore((state) => state.setRange);
+  const setInspectorOpen = useHistoryStore((state) => state.setInspectorOpen);
+  const setFollowCamera = useHistoryStore((state) => state.setFollowCamera);
+
+  const reopenRef = useRef<HTMLButtonElement>(null);
+
+  // The page opens on whatever the realtime map had selected, so following a
+  // vehicle from one page to the other never needs the picker at all.
+  useEffect(() => {
+    const fallback = selectedVehicleId || vehicles[0]?.id || "";
+    if (!vehicleId && fallback) setVehicleId(fallback);
+  }, [selectedVehicleId, setVehicleId, vehicleId, vehicles]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      // Never steal a key from a control the user is typing or dragging in.
+      if (target && (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(target.tagName))) return;
+
+      const state = useHistoryStore.getState();
+      if (event.key === " ") {
+        event.preventDefault();
+        state.togglePlaying();
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        state.stepBy(-1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        state.stepBy(1);
+      } else if (event.key === "f" || event.key === "F") {
+        state.setFollowCamera(!state.followCamera);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  function closeInspector() {
+    setInspectorOpen(false);
+    // Never leave focus on a control that just slid off the screen.
+    window.requestAnimationFrame(() => reopenRef.current?.focus());
+  }
+
+  const overlay = (() => {
+    if (vehicles.length === 0) return connectionStatus === "connecting" ? t("loadingVehicles") : t("noVehicles");
+    if (status === "loading") return t("loadingHistory");
+    if (status === "error") return t("historyError");
+    if (status === "ready" && track.length < 2) return t("noHistory");
+    return "";
+  })();
+
+  /** One surface for everything that sits on top of the map. */
+  const floating = {
+    border: "1px solid",
+    borderColor: tokens.line,
+    bgcolor: tokens.panel,
+    backdropFilter: "blur(10px) saturate(1.2)",
+    WebkitBackdropFilter: "blur(10px) saturate(1.2)",
+    boxShadow: "0 6px 22px rgb(0 0 0 / 0.22)",
+  } as const;
+
+  const dateField = {
+    height: 34,
+    px: 1,
+    border: "1px solid",
+    borderColor: tokens.line,
+    borderRadius: 2.5,
+    bgcolor: tokens.panelSolid,
+    color: tokens.text1,
+    fontFamily: "var(--font-data)",
+    fontSize: "0.7rem",
+    cursor: "pointer",
+    colorScheme: mode,
+    "&:hover": { borderColor: tokens.lineStrong },
+    "&:focus-visible": { outline: "2px solid", outlineColor: tokens.accent, outlineOffset: 2 },
+    "&::-webkit-calendar-picker-indicator": { cursor: "pointer", opacity: 0.55 },
+  } as const;
 
   return (
-    <Box sx={{ height: "100dvh", display: "flex", bgcolor: "background.default" }}>
+    <Box sx={{ height: "100dvh", display: "flex", flexDirection: { xs: "column-reverse", sm: "row" }, bgcolor: tokens.mapGround, overflow: "hidden" }}>
       <AppSidebar />
-      <Box sx={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column" }}>
-        <Box component="header" sx={{ minHeight: 72, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2, px: { xs: 2, sm: 3 }, borderBottom: "1px solid", borderColor: "divider" }}>
-          <Box><Typography component="h1" sx={{ fontSize: "1.08rem", fontWeight: 900, letterSpacing: "-0.035em", color: "text.primary" }}>{t("historyTitle")}</Typography><Typography sx={{ mt: 0.2, fontSize: "0.72rem", color: "text.secondary" }}>{t("historySubtitle")}</Typography></Box>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}><Chip icon={<HistoryRoundedIcon />} label={t("days7")} sx={{ bgcolor: "rgba(91,75,219,0.14)", color: "primary.main", fontWeight: 800 }} /><HeaderControls /></Box>
-        </Box>
+      <HistoryPlayback />
 
-        <Box sx={{ minHeight: 0, flex: 1, display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1fr) 340px" }, overflow: "hidden" }}>
-          <Box sx={{ overflowY: "auto", px: { xs: 2, sm: 3.5 }, py: 3 }}>
-            <Box sx={{ display: "flex", alignItems: "end", justifyContent: "space-between", gap: 2, mb: 2.5 }}>
-              <Box><Typography sx={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: "-0.04em", color: "text.primary" }}>{vehicle.label}</Typography><Typography sx={{ mt: 0.35, fontSize: "0.8rem", color: "text.secondary" }}>{vehicle.code} · {vehicle.speedKph} km/h · {t("heading")} {vehicle.headingDeg}° · {vehicle.lastUpdate}</Typography></Box>
-              <Typography sx={{ fontSize: "0.76rem", color: "text.secondary", whiteSpace: "nowrap" }}>{vehicleHistory.length} {t("events")}</Typography>
-            </Box>
+      <Box component="main" sx={{ minWidth: 0, minHeight: 0, flex: 1, display: "flex", flexDirection: "column" }}>
+        <Box sx={{ position: "relative", minWidth: 0, minHeight: 0, flex: 1, bgcolor: tokens.mapGround }}>
+          <HistoryMap />
 
-            <Box sx={{ display: "grid", gap: 1.5 }}>
-              {vehicleHistory.map((event, index) => {
-                const previous = vehicleHistory[index - 1];
-                const showDay = !previous || previous.day !== event.day;
-                return (
-                  <Box key={`${event.day}-${event.time}`}>
-                    {showDay && <Typography sx={{ pt: index ? 1.5 : 0, pb: 0.8, fontSize: "0.72rem", fontWeight: 900, letterSpacing: "0.08em", color: "text.secondary", textTransform: "uppercase" }}>{event.day}</Typography>}
-                    <Box sx={{ display: "flex", gap: 1.5, p: 1.6, border: "1px solid", borderColor: "divider", borderRadius: 3, bgcolor: "background.paper" }}>
-                      <Box sx={{ width: 34, height: 34, flexShrink: 0, display: "grid", placeItems: "center", borderRadius: 2, bgcolor: colors[event.kind], color: "#fff" }}><DirectionsCarRoundedIcon fontSize="small" /></Box>
-                      <Box sx={{ minWidth: 0, flex: 1 }}><Typography sx={{ fontSize: "0.88rem", fontWeight: 800, color: "text.primary" }}>{event.title}</Typography><Typography sx={{ mt: 0.3, fontSize: "0.77rem", color: "text.secondary" }}>{event.detail}</Typography></Box>
-                      <Typography sx={{ fontSize: "0.72rem", color: "text.secondary", whiteSpace: "nowrap" }}>{event.time}</Typography>
-                    </Box>
-                  </Box>
-                );
-              })}
+          {/* Which vehicle, and over which days: the two things a replay is of. */}
+          <Box sx={{ position: "absolute", zIndex: 950, top: 12, left: 12, display: "flex", alignItems: "center", gap: 0.8, p: 0.8, borderRadius: 3, ...floating }}>
+            <VehiclePicker
+              vehicles={vehicles}
+              vehicleId={vehicleId}
+              onSelect={(id) => {
+                setVehicleId(id);
+                // Both pages stay on the same vehicle, so going back to the
+                // live map lands on the one that was just replayed.
+                setSelectedVehicleId(id);
+              }}
+            />
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <Box component="input" type="date" aria-label={t("dateFrom")} value={from} max={to} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setRange(event.target.value, to)} sx={dateField} />
+              <Typography aria-hidden sx={{ color: tokens.text3, fontSize: "0.72rem" }}>–</Typography>
+              <Box component="input" type="date" aria-label={t("dateTo")} value={to} min={from} max={todayKey()} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setRange(from, event.target.value)} sx={dateField} />
             </Box>
           </Box>
 
-          <Box component="aside" sx={{ overflowY: "auto", p: 2.5, borderTop: { xs: "1px solid", lg: 0 }, borderLeft: { lg: "1px solid" }, borderColor: "divider", bgcolor: "background.default" }}>
-            <Typography sx={{ fontSize: "0.76rem", fontWeight: 900, letterSpacing: "0.08em", color: "text.secondary", textTransform: "uppercase" }}>{t("chooseVehicle")}</Typography>
-            <Typography sx={{ mt: 0.45, fontSize: "0.7rem", color: "text.secondary" }}>{t("demoVehicles")}</Typography>
-            <Box sx={{ display: "grid", gap: 1, mt: 1.5 }}>
-              {vehicles.slice(0, 12).map((item) => <Box key={item.id} component="button" type="button" onClick={() => setSelectedVehicleId(item.id)} sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%", p: 1.1, border: "1px solid", borderColor: item.id === vehicle.id ? "#9CCBFF" : "divider", borderRadius: 2.5, bgcolor: item.id === vehicle.id ? "rgba(22,119,255,0.12)" : "background.paper", textAlign: "left", cursor: "pointer" }}><Box sx={{ width: 9, height: 9, borderRadius: "50%", bgcolor: getVehicleMarkerColor(item) }} /><Typography sx={{ fontSize: "0.78rem", fontWeight: 800, color: "text.primary" }}>{item.label}</Typography><Typography sx={{ ml: "auto", fontSize: "0.68rem", color: "text.secondary" }}>{item.code}</Typography></Box>)}
+
+          {/* The closed table keeps the one number you cannot read off the map. */}
+          <Tooltip title={t("showTable")} placement="left" disableInteractive>
+            <Box
+              component="button"
+              ref={reopenRef}
+              type="button"
+              onClick={() => setInspectorOpen(true)}
+              aria-expanded={inspectorOpen}
+              sx={{
+                position: "absolute",
+                zIndex: 950,
+                top: 12,
+                right: 12,
+                display: "flex",
+                alignItems: "center",
+                gap: 0.8,
+                height: 32,
+                px: 1.3,
+                borderRadius: 16,
+                ...floating,
+                color: tokens.text2,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: "0.68rem",
+                fontWeight: 600,
+                whiteSpace: "nowrap",
+                opacity: inspectorOpen ? 0 : 1,
+                transform: inspectorOpen ? "translateX(10px) scale(0.94)" : "translateX(0) scale(1)",
+                pointerEvents: inspectorOpen ? "none" : "auto",
+                transition: reopenTransition,
+                "&:hover": { color: tokens.text1 },
+                "&:focus-visible": { outline: "2px solid", outlineColor: tokens.accent, outlineOffset: 2 },
+                "@media (prefers-reduced-motion: reduce)": { transition: "opacity 1ms", transform: "none" },
+              }}
+            >
+              <ChevronLeftRoundedIcon sx={{ fontSize: 15 }} />
+              {t("pointAt")}{" "}
+              <Box component="span" sx={{ fontFamily: "var(--font-data)", fontWeight: 700, fontVariantNumeric: "tabular-nums", color: tokens.text1 }}>
+                {track.length === 0 ? 0 : index + 1} / {track.length}
+              </Box>
             </Box>
-            <Box sx={{ mt: 3, p: 2, border: "1px solid rgba(22,119,255,0.16)", borderRadius: 3, bgcolor: "rgba(22,119,255,0.07)", color: "text.primary" }}><DirectionsCarRoundedIcon fontSize="small" color="primary" /><Typography sx={{ mt: 0.7, fontSize: "0.78rem", fontWeight: 900 }}>ข้อมูลรถจำลองเท่านั้น</Typography><Typography sx={{ mt: 0.6, fontSize: "0.72rem", lineHeight: 1.55, color: "text.secondary" }}>ไม่มี GPS จริง ข้อมูลคนขับ หรือข้อมูลรถขององค์กร</Typography></Box>
+          </Tooltip>
+
+          {/* The trackpoint table is a layer over the map, not a column beside
+              it: the map keeps its full width whether the table is open or not. */}
+          <Box
+            component="aside"
+            aria-label={t("trackpoints")}
+            inert={!inspectorOpen}
+            sx={{
+              position: "absolute",
+              zIndex: 960,
+              top: 54,
+              right: 12,
+              bottom: 12,
+              width: { xs: "calc(100% - 24px)", sm: 300 },
+              maxWidth: "calc(100% - 24px)",
+              display: "flex",
+              flexDirection: "column",
+              borderRadius: 3,
+              ...floating,
+              overflow: "hidden",
+              opacity: inspectorOpen ? 1 : 0,
+              transform: inspectorOpen ? "translateX(0)" : `translateX(${fleetMotion.slidePx}px)`,
+              pointerEvents: inspectorOpen ? "auto" : "none",
+              transition: panelTransition(inspectorOpen),
+              "@media (prefers-reduced-motion: reduce)": { transition: "opacity 1ms", transform: "none" },
+            }}
+          >
+            <TrackpointList onClose={closeInspector} />
           </Box>
+
+          {/* The legend says out loud that these colours are speed. */}
+          <Box sx={{ position: "absolute", zIndex: 940, bottom: 12, left: 12, display: "flex", alignItems: "center", gap: 1.2, px: 1.2, py: 0.7, borderRadius: 2.5, ...floating, boxShadow: "none" }}>
+            <Typography sx={{ fontSize: "0.6rem", fontWeight: 600, color: tokens.text3 }}>{t("routeSpeedLegend")}</Typography>
+            {([["normal", "0–70"], ["brisk", "71–80"], ["over", "81+"]] as const).map(([band, label]) => (
+              <Box key={band} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <Box sx={{ width: 12, height: 3, borderRadius: 2, bgcolor: speedBandColors[mode][band] }} />
+                <Typography sx={{ fontFamily: "var(--font-data)", fontSize: "0.58rem", fontWeight: 700, color: tokens.text2 }}>{label}</Typography>
+              </Box>
+            ))}
+          </Box>
+
+          {!followCamera && playheadOffscreen && track.length > 0 && (
+            <Box
+              component="button"
+              type="button"
+              onClick={() => setFollowCamera(true)}
+              sx={{
+                position: "absolute",
+                zIndex: 950,
+                bottom: 12,
+                left: "50%",
+                transform: "translateX(-50%)",
+                display: "flex",
+                alignItems: "center",
+                gap: 0.7,
+                height: 30,
+                px: 1.4,
+                borderRadius: 16,
+                ...floating,
+                color: tokens.text2,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: "0.68rem",
+                fontWeight: 600,
+                whiteSpace: "nowrap",
+                "&:hover": { color: tokens.text1 },
+                "&:focus-visible": { outline: "2px solid", outlineColor: tokens.accent, outlineOffset: 2 },
+              }}
+            >
+              <MyLocationRoundedIcon sx={{ fontSize: 14 }} />
+              {t("backToVehicle")}
+            </Box>
+          )}
+
+          {overlay && (
+            <Box sx={{ position: "absolute", zIndex: 930, inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
+              <Typography sx={{ px: 2, py: 1, borderRadius: 2.5, ...floating, fontSize: "0.8rem", fontWeight: 600, color: tokens.text2 }}>{overlay}</Typography>
+            </Box>
+          )}
         </Box>
+
+        <Box sx={{ display: "flex", justifyContent: "center", gap: 1, px: 1.5, py: 1.2, borderTop: "1px solid", borderColor: tokens.line, bgcolor: tokens.chrome }}>
+          <PlaybackDeck />
+        </Box>
+
+        {truncated && (
+          <Typography sx={{ px: 2, pb: 1, fontSize: "0.66rem", color: tokens.text3, bgcolor: tokens.chrome }}>
+            {locale === "th" ? "แสดงเฉพาะช่วงต้นของช่วงที่เลือก เพราะจำนวนจุดเกินเพดานต่อคำขอ" : "Showing the start of this range only: it hit the per-request point cap."}
+          </Typography>
+        )}
       </Box>
     </Box>
   );
