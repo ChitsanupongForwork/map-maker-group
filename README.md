@@ -1,51 +1,36 @@
-# Fleet Monitor
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-An independent front-end portfolio concept for viewing a simulated vehicle fleet on a map.
+## Getting Started
 
-## What it demonstrates
-
-- Browse 1,000 simulated vehicle markers using map clustering.
-- Search the vehicle list without rendering all rows at once.
-- Select a vehicle and fly to its simulated location.
-- Review a separate vehicle activity history page.
-- Stream live position updates from the included Go service over SSE.
-
-## Scope and data
-
-This project is an original UI concept. It contains no proprietary code, branding, customer data, or other material from any third party. It uses fictional vehicle data only. Every vehicle record is served by the Go API; the front end keeps no offline copy, so it reports a connection error rather than showing stand-in data that could be mistaken for the real thing.
-
-The map uses OpenStreetMap tiles and keeps the required attribution visible in the map control. Do not add bulk-download or offline tile features when using the public tile service.
-
-## Run locally
+First, run the development server:
 
 ```bash
 npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-For a production check:
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-```bash
-npm run build
-```
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-## Required Go API
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-The front end has no data of its own, so the API must be running before the dashboard shows anything. It lives in the sibling `map-maker-group-service-api` project. The service needs `DATABASE_URL`, so set it in a second terminal before starting (PowerShell):
+## Learn More
 
-```powershell
-cd ..\map-maker-group-service-api
-$env:DATABASE_URL="postgres://postgres:your-password@127.0.0.1:5432/postgres?sslmode=disable"
-$env:DB_SCHEMA="map-maker-db"
-go run .
-```
+To learn more about Next.js, take a look at the following resources:
 
-To try the dashboard without PostgreSQL, start the in-memory demo instead:
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-```powershell
-$env:DEMO_MODE="true"
-go run .
-```
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-Either way it provides a `GET /api/fleet` snapshot and an SSE stream at `GET /api/fleet/stream` on port 8080.
+## Deploy on Vercel
 
-While the API is unreachable the dashboard shows a connection error and retries every five seconds, so it recovers on its own once the service starts. For Vercel, set `NEXT_PUBLIC_FLEET_API_URL` to the public URL of the separately deployed Go service.
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
