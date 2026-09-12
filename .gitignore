@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ไฟล์ worker ของ MapLibre ถูก copy อัตโนมัติจาก node_modules
+/public/maplibre

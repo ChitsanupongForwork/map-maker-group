@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FleetProvider Flow</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #172033;
+        --muted: #5f6b7a;
+        --line: #cbd5e1;
+        --surface: #ffffff;
+        --page: #f4f7fb;
+        --accent: #2563eb;
+        --accent-soft: #eff6ff;
+        --green: #15803d;
+        --green-soft: #f0fdf4;
+        --amber: #a16207;
+        --amber-soft: #fffbeb;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--ink);
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        line-height: 1.55;
+      }
+
+      main {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 48px 0 64px;
+      }
+
+      h1, h2, p { margin-top: 0; }
+      h1 { margin-bottom: 8px; font-size: clamp(28px, 5vw, 44px); line-height: 1.15; }
+      h2 { margin-bottom: 12px; font-size: 18px; }
+      .lead { max-width: 760px; color: var(--muted); font-size: 17px; }
+
+      .answer {
+        margin: 28px 0;
+        padding: 18px 20px;
+        border: 1px solid #bfdbfe;
+        border-left: 5px solid var(--accent);
+        border-radius: 12px;
+        background: var(--accent-soft);
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: minmax(210px, 0.8fr) 64px minmax(300px, 1.25fr) 64px minmax(240px, 1fr);
+        align-items: center;
+        margin-top: 34px;
+      }
+
+      .stack { display: grid; gap: 12px; }
+      .arrow { color: var(--accent); font-size: 32px; font-weight: 700; text-align: center; }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        padding: 18px;
+        box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
+      }
+
+      .card p, .card ul { margin-bottom: 0; color: var(--muted); }
+      .card ul { padding-left: 20px; }
+      .provider { border: 2px solid var(--accent); padding: 24px; }
+      .provider h2 { color: var(--accent); font-size: 22px; }
+      .source { border-color: #bbf7d0; background: var(--green-soft); }
+      .source h2 { color: var(--green); }
+
+      .provider-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .mini {
+        border: 1px solid #dbe4f0;
+        border-radius: 10px;
+        background: #f8fafc;
+        padding: 12px;
+      }
+
+      .mini strong { display: block; margin-bottom: 4px; }
+      .mini span { color: var(--muted); font-size: 14px; }
+
+      .note {
+        margin-top: 34px;
+        border-color: #fde68a;
+        background: var(--amber-soft);
+      }
+
+      .note h2 { color: var(--amber); }
+      code { padding: 2px 5px; border-radius: 5px; background: #e2e8f0; }
+
+      .functions { margin-top: 42px; }
+      .functions > h2 { margin-bottom: 6px; font-size: 28px; }
+      .section-lead { margin-bottom: 22px; color: var(--muted); }
+      .function-list { display: grid; gap: 16px; }
+      .function-card { display: grid; grid-template-columns: 210px 1fr; gap: 24px; }
+      .function-name { color: var(--accent); font-size: 18px; }
+      .function-name code { background: var(--accent-soft); }
+      .function-body { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+      .function-body .mini { min-width: 0; }
+      .function-body p { overflow-wrap: anywhere; }
+      .tag {
+        display: inline-block;
+        margin-bottom: 8px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        padding: 3px 9px;
+        color: #334155;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .tree-section { margin-top: 42px; }
+      .tree-section > h2 { margin-bottom: 6px; font-size: 28px; }
+      .tree {
+        margin-top: 24px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--surface);
+        padding: 28px;
+        overflow-x: auto;
+      }
+      .tree-root { display: grid; justify-items: center; min-width: 880px; }
+      .tree-node {
+        min-width: 190px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #f8fafc;
+        padding: 12px 16px;
+        text-align: center;
+      }
+      .tree-node strong { display: block; }
+      .tree-node span { color: var(--muted); font-size: 13px; }
+      .tree-node.root {
+        min-width: 280px;
+        border: 2px solid var(--accent);
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .tree-node.server { border-color: #86efac; background: var(--green-soft); color: var(--green); }
+      .tree-node.output { border-color: #bfdbfe; background: #f8fbff; }
+      .tree-line-down { width: 2px; height: 28px; background: var(--accent); }
+      .tree-arrow-down { color: var(--accent); font-size: 22px; line-height: 1; }
+      .tree-branches {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 28px;
+        width: 100%;
+        padding-top: 29px;
+      }
+      .tree-branches::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: calc(16.666% + 14px);
+        right: calc(16.666% + 14px);
+        height: 2px;
+        background: var(--accent);
+      }
+      .tree-branch {
+        position: relative;
+        display: grid;
+        align-content: start;
+        justify-items: center;
+        gap: 10px;
+      }
+      .tree-branch::before {
+        content: "";
+        position: absolute;
+        top: -29px;
+        width: 2px;
+        height: 29px;
+        background: var(--accent);
+      }
+      .tree-children { display: grid; gap: 9px; width: 100%; }
+      .tree-children .tree-node { min-width: 0; width: 100%; }
+      .tree-caption { margin: 18px 0 0; color: var(--muted); text-align: center; }
+
+      @media (max-width: 860px) {
+        main { padding-top: 28px; }
+        .flow { grid-template-columns: 1fr; }
+        .arrow { transform: rotate(90deg); padding: 8px; }
+        .function-card { grid-template-columns: 1fr; gap: 12px; }
+        .function-body { grid-template-columns: 1fr; }
+      }
+
+      @media (max-width: 480px) {
+        .provider-grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>FleetProvider ทำหน้าที่อะไร?</h1>
+        <p class="lead">ภาพรวมเส้นทางข้อมูล ตั้งแต่ Server ส่งข้อมูลรถเข้ามา จนถึงส่วนต่าง ๆ ของ Dashboard นำข้อมูลไปแสดงผล</p>
+      </header>
+
+      <section class="answer" aria-label="คำตอบสั้น">
+        <strong>คำตอบสั้น:</strong> ใช่บางส่วน — มันเป็นศูนย์กลางของ <strong>ข้อมูลและ state ที่เกี่ยวกับ Fleet ซึ่งหลาย component ใช้ร่วมกัน</strong> แต่ไม่ได้ดูแลทุกอย่างในระบบ และไม่ได้เป็นฐานข้อมูลหรือ Backend
+      </section>
+
+      <section class="flow" aria-label="แผนภาพการไหลของข้อมูล Fleet">
+        <div class="stack">
+          <article class="card source">
+            <h2>1. Server</h2>
+            <p><code>getFleetSnapshot()</code></p>
+            <ul>
+              <li>รายการรถ</li>
+              <li>กลุ่มรถ</li>
+              <li>คนขับ</li>
+              <li>พื้นที่</li>
+              <li>เวลาที่สร้างข้อมูล</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="arrow" aria-hidden="true">→</div>
+
+        <article class="card provider">
+          <h2>2. FleetProvider</h2>
+          <p>ศูนย์กลาง state ที่ทุกส่วนของ Fleet ใช้ร่วมกัน</p>
+          <div class="provider-grid">
+            <div class="mini"><strong>เก็บข้อมูล</strong><span>vehicles, now, selectedId, live</span></div>
+            <div class="mini"><strong>เก็บตัวเลือกผู้ใช้</strong><span>filter และ sort</span></div>
+            <div class="mini"><strong>จำลองข้อมูลสด</strong><span>ขยับรถและอัปเดตทุก 3 วินาที</span></div>
+            <div class="mini"><strong>คำนวณข้อมูลแสดงผล</strong><span>view, sorted และ selected</span></div>
+            <div class="mini"><strong>แจกข้อมูล</strong><span>ผ่าน useFleet()</span></div>
+            <div class="mini"><strong>แจกคำสั่ง</strong><span>ผ่าน useFleetActions()</span></div>
+          </div>
+        </article>
+
+        <div class="arrow" aria-hidden="true">→</div>
+
+        <div class="stack">
+          <article class="card"><h2>แผนที่</h2><p>วาดรถที่ผ่านตัวกรอง และเลื่อนไปยังรถที่เลือก</p></article>
+          <article class="card"><h2>รายการรถ</h2><p>แสดงรถที่กรองและเรียงแล้ว</p></article>
+          <article class="card"><h2>ตัวกรองและสถิติ</h2><p>เปลี่ยน filter และแสดงจำนวนแต่ละสถานะ</p></article>
+          <article class="card"><h2>รายละเอียด / Export / Topbar</h2><p>อ่านรถที่เลือก ข้อมูลที่กรอง และสถานะ Live</p></article>
+        </div>
+      </section>
+
+      <section class="card note">
+        <h2>ขอบเขตที่ควรจำ</h2>
+        <p><strong>FleetProvider จัดการ state ร่วมของหน้าฝั่ง Fleet</strong> ส่วน component ปลายทางยังรับผิดชอบการวาด UI ของตัวเอง และ Server ยังคงรับผิดชอบการดึงหรือบันทึกข้อมูลจริง หากภายหลังเชื่อม GPS จริง ส่วนจำลองใน <code>advanceFleet()</code> ก็ควรถูกแทนด้วยข้อมูลจาก API, WebSocket หรือ stream</p>
+      </section>
+
+      <section class="tree-section" aria-labelledby="tree-title">
+        <h2 id="tree-title">Tree การไหลของข้อมูล</h2>
+        <p class="section-lead">อ่านจากบนลงล่าง: Server ส่งข้อมูลตั้งต้นเข้า Provider จากนั้น Provider ดูแล state และกระจายผลลัพธ์ไปยังส่วนแสดงผล</p>
+
+        <div class="tree" role="img" aria-label="แผนผังต้นไม้แสดงการไหลของข้อมูลจาก Server ผ่าน FleetProvider ไปยัง state, logic, actions และ component ปลายทาง">
+          <div class="tree-root">
+            <div class="tree-node server">
+              <strong>getFleetSnapshot()</strong>
+              <span>ดึงข้อมูลเริ่มต้นจาก Server</span>
+            </div>
+            <div class="tree-line-down" aria-hidden="true"></div>
+            <div class="tree-arrow-down" aria-hidden="true">▼</div>
+            <div class="tree-node root">
+              <strong>FleetProvider</strong>
+              <span>ศูนย์กลางข้อมูล Fleet ที่ใช้ร่วมกัน</span>
+            </div>
+            <div class="tree-line-down" aria-hidden="true"></div>
+
+            <div class="tree-branches">
+              <div class="tree-branch">
+                <div class="tree-node"><strong>State ที่เก็บไว้</strong><span>ค่าที่เปลี่ยนตามเวลาและการใช้งาน</span></div>
+                <div class="tree-arrow-down" aria-hidden="true">▼</div>
+                <div class="tree-children">
+                  <div class="tree-node"><strong>vehicles</strong><span>ข้อมูลรถปัจจุบัน</span></div>
+                  <div class="tree-node"><strong>now / live</strong><span>เวลา UI และสถานะข้อมูลสด</span></div>
+                  <div class="tree-node"><strong>filter / sort</strong><span>ตัวกรองและการเรียง</span></div>
+                  <div class="tree-node"><strong>selectedId</strong><span>ID รถที่ผู้ใช้เลือก</span></div>
+                </div>
+              </div>
+
+              <div class="tree-branch">
+                <div class="tree-node"><strong>Logic ที่คำนวณ</strong><span>แปลง state เป็นข้อมูลพร้อมใช้</span></div>
+                <div class="tree-arrow-down" aria-hidden="true">▼</div>
+                <div class="tree-children">
+                  <div class="tree-node"><strong>advanceFleet()</strong><span>จำลองรถเคลื่อนที่และสัญญาณ</span></div>
+                  <div class="tree-node"><strong>buildFleetView()</strong><span>กรองรถและนับสถานะ</span></div>
+                  <div class="tree-node"><strong>sortVehicles()</strong><span>เรียงรถที่ผ่านตัวกรอง</span></div>
+                  <div class="tree-node"><strong>selected</strong><span>ค้นข้อมูลรถเต็มก้อนจาก ID</span></div>
+                </div>
+              </div>
+
+              <div class="tree-branch">
+                <div class="tree-node"><strong>Context ที่ส่งออก</strong><span>ช่องทางให้ component ลูกเข้าถึง</span></div>
+                <div class="tree-arrow-down" aria-hidden="true">▼</div>
+                <div class="tree-children">
+                  <div class="tree-node output"><strong>useFleet()</strong><span>อ่าน view, sorted, selected และ state</span></div>
+                  <div class="tree-node output"><strong>useFleetActions()</strong><span>สั่งค้นหา กรอง เรียง เลือก และ Live</span></div>
+                  <div class="tree-node output"><strong>Map / Vehicle List</strong><span>แสดงรถบนแผนที่และรายการ</span></div>
+                  <div class="tree-node output"><strong>Stats / Detail / Export</strong><span>แสดงสถิติ รายละเอียด และส่งออก</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="tree-caption">State เปลี่ยน → Logic คำนวณใหม่ → Component ที่อ่านข้อมูล render ใหม่</p>
+        </div>
+      </section>
+
+      <section class="functions" aria-labelledby="functions-title">
+        <h2 id="functions-title">แต่ละ Function ทำงานอย่างไร</h2>
+        <p class="section-lead">อ่านแต่ละแถวจากซ้ายไปขวา: รับอะไรเข้ามา → ทำอะไร → ส่งอะไรออกไป</p>
+
+        <div class="function-list">
+          <article class="card function-card">
+            <div>
+              <span class="tag">ตัวจำลองข้อมูลสด</span>
+              <h2 class="function-name"><code>advanceFleet()</code></h2>
+              <p>ถูกเรียกทุก 3 วินาทีเมื่อเปิด Live</p>
+            </div>
+            <div class="function-body">
+              <div class="mini"><strong>Input</strong><p>รถทั้งหมด, เวลาที่ผ่านไป และเวลาปัจจุบัน</p></div>
+              <div class="mini"><strong>Process</strong><p>ตรวจความสดของข้อมูล สุ่มหลุด/ต่อสัญญาณ และขยับพิกัดรถที่กำลังวิ่งตามความเร็วกับทิศทาง</p></div>
+              <div class="mini"><strong>Output</strong><p>อาร์เรย์รถชุดใหม่ โดย clone เฉพาะคันที่ต้องเปลี่ยน</p></div>
+            </div>
+          </article>
+
+          <article class="card function-card">
+            <div>
+              <span class="tag">ศูนย์กลางหลัก</span>
+              <h2 class="function-name"><code>FleetProvider()</code></h2>
+              <p>ครอบ Dashboard ทั้งโซน</p>
+            </div>
+            <div class="function-body">
+              <div class="mini"><strong>Input</strong><p><code>snapshot</code> จาก Server และ <code>children</code> ที่อยู่ภายใน</p></div>
+              <div class="mini"><strong>Process</strong><p>สร้าง state, เปิด interval, กรอง เรียง หารถที่เลือก และสร้างชุด actions</p></div>
+              <div class="mini"><strong>Output</strong><p>แจก StateContext และ ActionsContext ให้ component ลูกทั้งหมด</p></div>
+            </div>
+          </article>
+
+          <article class="card function-card">
+            <div>
+              <span class="tag">อ่านข้อมูล</span>
+              <h2 class="function-name"><code>useFleet()</code></h2>
+              <p>ใช้ในส่วนที่ต้องแสดงข้อมูล</p>
+            </div>
+            <div class="function-body">
+              <div class="mini"><strong>Input</strong><p>ไม่รับ argument แต่ต้องถูกเรียกภายใต้ FleetProvider</p></div>
+              <div class="mini"><strong>Process</strong><p>อ่านค่าปัจจุบันจาก StateContext และตรวจว่ามี Provider ครอบอยู่หรือไม่</p></div>
+              <div class="mini"><strong>Output</strong><p><code>vehicles</code>, <code>view</code>, <code>sorted</code>, <code>selected</code>, filter, sort, now และ live</p></div>
+            </div>
+          </article>
+
+          <article class="card function-card">
+            <div>
+              <span class="tag">สั่งเปลี่ยนข้อมูล</span>
+              <h2 class="function-name"><code>useFleetActions()</code></h2>
+              <p>ใช้ในปุ่ม ช่องค้นหา และตัวกรอง</p>
+            </div>
+            <div class="function-body">
+              <div class="mini"><strong>Input</strong><p>ไม่รับ argument และต้องอยู่ภายใต้ FleetProvider</p></div>
+              <div class="mini"><strong>Process</strong><p>อ่านเฉพาะ ActionsContext จึงไม่ต้องผูกกับข้อมูลรถที่เปลี่ยนทุก 3 วินาที</p></div>
+              <div class="mini"><strong>Output</strong><p>คำสั่ง setStatus, setDataStatus, setScope, setSearch, setSort, select, resetFilter และ toggleLive</p></div>
+            </div>
+          </article>
+
+          <article class="card function-card">
+            <div>
+              <span class="tag">เลือกคันรถ</span>
+              <h2 class="function-name"><code>useSelectVehicle()</code></h2>
+              <p>Hook แบบย่อที่เตรียมไว้</p>
+            </div>
+            <div class="function-body">
+              <div class="mini"><strong>Input</strong><p>ตอนเรียก hook ไม่รับค่า แต่ function ที่คืนมารับ ID รถหรือ <code>null</code></p></div>
+              <div class="mini"><strong>Process</strong><p>หยิบ <code>select</code> จาก actions แล้วครอบด้วย <code>useCallback</code> ให้ reference คงที่</p></div>
+              <div class="mini"><strong>Output</strong><p>Function สำหรับเลือกหรือยกเลิกเลือกรถ ปัจจุบันยังไม่มีจุดเรียกใช้ในโปรเจกต์</p></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="functions" aria-labelledby="internal-title">
+        <h2 id="internal-title">Logic ภายใน FleetProvider</h2>
+        <p class="section-lead">ส่วนเหล่านี้ไม่ใช่ function ที่ export แต่เป็นตัวทำงานสำคัญภายใน Provider</p>
+        <div class="function-list">
+          <article class="card"><h2>Live Effect</h2><p>เมื่อ <code>live = true</code> จะตั้งเวลาเรียกทุก 3 วินาที อัปเดต <code>now</code> และส่งรถทั้งหมดเข้า <code>advanceFleet()</code> เมื่อปิด Live หรือออกจากหน้า จะล้าง interval</p></article>
+          <article class="card"><h2>Visibility Effect</h2><p>เมื่อผู้ใช้กลับมาที่แท็บ จะตั้ง <code>lastTick</code> ใหม่ เพื่อไม่เอาเวลาที่หายไปตอนซ่อนแท็บมาคำนวณจนรถกระโดดไกล</p></article>
+          <article class="card"><h2><code>buildFleetView()</code></h2><p>นำรถ + filter + เวลาปัจจุบันมาสร้างรายการรถที่ผ่านตัวกรอง พร้อมจำนวนรถแต่ละสถานะและสถานะความสดของข้อมูล</p></article>
+          <article class="card"><h2><code>sortVehicles()</code></h2><p>นำ <code>view.vehicles</code> มาเรียงตามเวลาอัปเดต ทะเบียน ความเร็ว หรือสถานะ โดยไม่แก้ array ต้นฉบับ</p></article>
+          <article class="card"><h2>หา <code>selected</code></h2><p>ใช้ <code>selectedId</code> ค้นหาข้อมูลรถเต็มก้อนจาก vehicles ถ้าไม่ได้เลือกหรือหาไม่พบจะได้ <code>null</code></p></article>
+          <article class="card"><h2>Actions</h2><p>แต่ละคำสั่งแก้ state เฉพาะส่วน เช่น <code>setSearch()</code> เปลี่ยนข้อความค้นหา, <code>resetFilter()</code> คืนตัวกรองเริ่มต้น และ <code>toggleLive()</code> สลับสถานะ Live</p></article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
