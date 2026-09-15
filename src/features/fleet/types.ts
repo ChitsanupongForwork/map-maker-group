@@ -42,6 +42,12 @@ export type FleetSnapshot = {
   generatedAt: number;
 };
 
+/**
+ * ส่วนที่เปลี่ยนของรถหนึ่งคัน จาก event "patch" ของ GET /api/fleet/stream
+ * id มีเสมอ ฟิลด์อื่นมีเฉพาะที่เปลี่ยน
+ */
+export type VehiclePatch = Pick<Vehicle, "id"> & Partial<Omit<Vehicle, "id" | "speedHistory">>;
+
 export type FleetFilter = {
   status: VehicleStatus | "all";
   dataStatus: DataStatus | "all";

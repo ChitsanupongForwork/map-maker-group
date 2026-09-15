@@ -7,7 +7,9 @@ import {
   Clock3,
   Gauge,
   Info,
+  Loader2,
   MapPin,
+  MapPinOff,
   Pause,
   Play,
   RotateCcw,
@@ -18,17 +20,22 @@ import {
   Timer,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { env } from "@/env";
 import { useFleet } from "@/features/fleet";
 import { cn } from "@/shared/lib/cn";
 import { Button, IconButton } from "@/shared/ui/button";
+import { fetchHistory } from "../lib/fetch-history";
 import { buildMockHistory, pointAtProgress } from "../lib/mock-history";
-import type { HistoryEvent } from "../types";
+import type { HistoryEvent, HistoryTrip } from "../types";
 import { HistoryMapPanel } from "./history-map-panel";
 import { HistorySearchModal, type RecentHistorySearch } from "./history-search-modal";
 
 const PLAYBACK_DURATION_MS = 45_000;
 const SPEEDS = [0.5, 1, 2, 4] as const;
 const RECENT_SEARCHES_KEY = "map-maker:history-recent-searches:v1";
+
+/** ผลของคำขอล่าสุดไปที่ Go API — key บอกว่าเป็นของรถ + ช่วงเวลาไหน */
+type RemoteTrip = { key: string; trip: HistoryTrip | null; error: string | null };
 
 function inputDateTime(timestamp: number) {
   const date = new Date(timestamp);
@@ -83,11 +90,37 @@ export function HistoryDashboard() {
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
+  const [remote, setRemote] = useState<RemoteTrip>({ key: "", trip: null, error: null });
   const previousFrame = useRef<number | null>(null);
 
   const vehicle = snapshot.vehicles.find((item) => item.id === vehicleId) ?? snapshot.vehicles[0];
-  const trip = useMemo(() => vehicle ? buildMockHistory(vehicle, range.start, range.end) : null, [vehicle, range]);
-  const current = useMemo(() => trip ? pointAtProgress(trip.points, progress) : null, [trip, progress]);
+  const targetId = vehicle?.id;
+  const requestKey = `${targetId}|${range.start}|${range.end}`;
+
+  // โหมดข้อมูลจำลอง: สร้างเส้นทางในเครื่องทันที
+  const mockTrip = useMemo(
+    () => (!env.fleetApiUrl && vehicle ? buildMockHistory(vehicle, range.start, range.end) : null),
+    [vehicle, range],
+  );
+
+  // โหมด Go API: โหลดใหม่ทุกครั้งที่เปลี่ยนรถหรือช่วงเวลา และยกเลิกคำขอเก่าที่ยังไม่กลับมา
+  useEffect(() => {
+    if (!env.fleetApiUrl || !targetId) return;
+    const controller = new AbortController();
+    fetchHistory(targetId, range.start, range.end, controller.signal)
+      .then((trip) => setRemote({ key: requestKey, trip, error: null }))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setRemote({ key: requestKey, trip: null, error: error instanceof Error ? error.message : "โหลดประวัติไม่สำเร็จ" });
+      });
+    return () => controller.abort();
+  }, [requestKey, targetId, range.start, range.end]);
+
+  const settled = remote.key === requestKey;
+  const trip = env.fleetApiUrl ? (settled ? remote.trip : null) : mockTrip;
+  const loadError = env.fleetApiUrl && settled ? remote.error : null;
+  const loading = Boolean(env.fleetApiUrl && targetId) && !settled;
+  const current = useMemo(() => (trip ? pointAtProgress(trip.points, progress) : null), [trip, progress]);
 
   useEffect(() => {
     try {
@@ -123,7 +156,7 @@ export function HistoryDashboard() {
     return () => cancelAnimationFrame(frame);
   }, [playing, speed]);
 
-  if (!vehicle || !trip || !current) return null;
+  if (!vehicle) return null;
 
   const commitSearch = (nextVehicleId: string, nextStart: string, nextEnd: string) => {
     const start = new Date(nextStart).getTime();
@@ -153,6 +186,54 @@ export function HistoryDashboard() {
   };
 
   const applySearch = () => commitSearch(vehicleId, draftStart, draftEnd);
+  const selectableVehicles = snapshot.vehicles.slice(0, 30);
+
+  const summaryBar = (
+    <section className="panel flex shrink-0 flex-col gap-3 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between" aria-label="เงื่อนไขประวัติเส้นทางปัจจุบัน">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-[10px] border border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]"><CalendarRange className="size-4" /></span>
+        <div className="min-w-0"><p className="truncate text-[12px] font-semibold text-content">{vehicle.plate} · {vehicle.make} {vehicle.model}</p><p className="mt-0.5 truncate font-mono text-[10px] text-dim">{rangeDate(range.start)} → {rangeDate(range.end)}</p></div>
+      </div>
+      <Button variant="soft" onClick={() => { setPlaying(false); setSearchOpen(true); }} className="h-9 cursor-pointer"><Search className="size-3.5" /> ค้นหาใหม่</Button>
+    </section>
+  );
+
+  const searchModal = (
+    <HistorySearchModal
+      open={searchOpen}
+      canClose={hasSearched}
+      vehicles={selectableVehicles}
+      vehicleId={vehicleId}
+      start={draftStart}
+      end={draftEnd}
+      recentSearches={recentSearches}
+      onVehicleChange={setVehicleId}
+      onStartChange={setDraftStart}
+      onEndChange={setDraftEnd}
+      onSearch={applySearch}
+      onRecentSearch={(item) => commitSearch(item.vehicleId, item.start, item.end)}
+      onClose={() => setSearchOpen(false)}
+    />
+  );
+
+  // ยังโหลดอยู่ โหลดพัง หรือช่วงเวลานั้นรถไม่ได้ส่งตำแหน่งเลย — ไม่มีเส้นทางให้เล่น
+  if (!trip || !current) {
+    return (
+      <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3">
+        {summaryBar}
+        <section className="panel grid min-h-[500px] flex-1 place-items-center px-6 text-center" aria-live="polite">
+          {loading ? (
+            <div className="flex items-center gap-2 text-[12px] text-dim"><Loader2 className="size-4 animate-spin" /> กำลังโหลดเส้นทาง…</div>
+          ) : loadError ? (
+            <div><p className="text-[13px] font-semibold text-danger">โหลดประวัติเส้นทางไม่สำเร็จ</p><p className="mt-1 text-[11px] text-dim">{loadError}</p></div>
+          ) : (
+            <div><MapPinOff className="mx-auto mb-2 size-5 text-dim" /><p className="text-[13px] font-semibold text-content">ไม่มีข้อมูลตำแหน่งในช่วงเวลานี้</p><p className="mt-1 text-[11px] text-dim">{vehicle.plate} ไม่ได้ส่งตำแหน่งเข้ามาระหว่าง {rangeDate(range.start)} – {rangeDate(range.end)} ลองเลือกช่วงเวลาอื่น</p></div>
+          )}
+        </section>
+        {searchModal}
+      </div>
+    );
+  }
 
   const seekToEvent = (event: HistoryEvent) => {
     const total = trip.points.at(-1)!.timestamp - trip.points[0].timestamp;
@@ -160,19 +241,12 @@ export function HistoryDashboard() {
     setPlaying(false);
   };
 
-  const selectableVehicles = snapshot.vehicles.slice(0, 30);
   const elapsed = current.timestamp - trip.points[0].timestamp;
   const total = trip.points.at(-1)!.timestamp - trip.points[0].timestamp;
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3 xl:overflow-hidden">
-      <section className="panel flex shrink-0 flex-col gap-3 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between" aria-label="เงื่อนไขประวัติเส้นทางปัจจุบัน">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-[10px] border border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]"><CalendarRange className="size-4" /></span>
-          <div className="min-w-0"><p className="truncate text-[12px] font-semibold text-content">{vehicle.plate} · {vehicle.make} {vehicle.model}</p><p className="mt-0.5 truncate font-mono text-[10px] text-dim">{rangeDate(range.start)} → {rangeDate(range.end)}</p></div>
-        </div>
-        <Button variant="soft" onClick={() => { setPlaying(false); setSearchOpen(true); }} className="h-9 cursor-pointer"><Search className="size-3.5" /> ค้นหาใหม่</Button>
-      </section>
+      {summaryBar}
 
       <div className="grid min-h-[700px] flex-1 grid-cols-1 gap-3 xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_350px]">
         <section className="relative min-h-[500px] xl:min-h-0" aria-label="แผนที่ประวัติเส้นทาง">
@@ -246,21 +320,7 @@ export function HistoryDashboard() {
         </aside>
       </div>
 
-      <HistorySearchModal
-        open={searchOpen}
-        canClose={hasSearched}
-        vehicles={selectableVehicles}
-        vehicleId={vehicleId}
-        start={draftStart}
-        end={draftEnd}
-        recentSearches={recentSearches}
-        onVehicleChange={setVehicleId}
-        onStartChange={setDraftStart}
-        onEndChange={setDraftEnd}
-        onSearch={applySearch}
-        onRecentSearch={(item) => commitSearch(item.vehicleId, item.start, item.end)}
-        onClose={() => setSearchOpen(false)}
-      />
+      {searchModal}
     </div>
   );
 }

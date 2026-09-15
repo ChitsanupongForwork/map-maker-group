@@ -11,7 +11,9 @@ import {
   type ReactNode,
 } from "react";
 import { site } from "@/config/site";
+import { env } from "@/env";
 import { buildFleetView, EMPTY_FILTER, sortVehicles, type FleetView } from "../lib/filter";
+import { applyPatches } from "../lib/patch";
 import { deriveDataStatus } from "../lib/status";
 import type {
   DataStatus,
@@ -19,6 +21,7 @@ import type {
   FleetSnapshot,
   SortKey,
   Vehicle,
+  VehiclePatch,
   VehicleStatus,
 } from "../types";
 
@@ -58,6 +61,7 @@ const EARTH_DEG_PER_KM = 1 / 111.32;
 
 /**
  * ขยับรถที่กำลังวิ่งไปตามหัวรถ และเลื่อนเวลาข้อมูลล่าสุดของคันที่ยังส่งข้อมูลอยู่
+ * ใช้เฉพาะโหมดข้อมูลจำลอง — ต่อ Go API แล้วตำแหน่งมาจาก SSE แทน
  * คำนวณเป็น loop เดียวบนอาเรย์เดิม — ไม่มีการ clone ทั้งก้อนโดยไม่จำเป็น
  */
 function advanceFleet(vehicles: Vehicle[], elapsedMs: number, now: number): Vehicle[] {
@@ -105,20 +109,24 @@ function advanceFleet(vehicles: Vehicle[], elapsedMs: number, now: number): Vehi
 }
 
 export function FleetProvider({
-  snapshot,
+  snapshot: initialSnapshot,
   children,
 }: {
   snapshot: FleetSnapshot;
   children: ReactNode;
 }) {
-  const [vehicles, setVehicles] = useState(snapshot.vehicles);
-  const [now, setNow] = useState(snapshot.generatedAt);
+  // ก้อนเต็มล่าสุด — มาจาก server ตอนโหลดหน้า และจาก event "snapshot" ของ SSE ทุกครั้งที่ต่อสายใหม่
+  const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [vehicles, setVehicles] = useState(initialSnapshot.vehicles);
+  const [now, setNow] = useState(initialSnapshot.generatedAt);
   const [filter, setFilter] = useState<FleetFilter>(EMPTY_FILTER);
   const [sort, setSort] = useState<SortKey>("lastUpdate");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [live, setLive] = useState(true);
-  const lastTick = useRef(snapshot.generatedAt);
+  const lastTick = useRef(initialSnapshot.generatedAt);
 
+  // นาฬิกาของ UI — สถานะข้อมูลคำนวณจากอายุของ lastUpdate เทียบกับ now จึงต้องเดินตลอด
+  // โหมดข้อมูลจำลองขยับรถเองไปพร้อมกันในจังหวะเดียวกัน
   useEffect(() => {
     if (!live) return;
     lastTick.current = Date.now();
@@ -127,9 +135,30 @@ export function FleetProvider({
       const elapsed = stamp - lastTick.current;
       lastTick.current = stamp;
       setNow(stamp);
-      setVehicles((current) => advanceFleet(current, elapsed, stamp));
+      if (!env.fleetApiUrl) setVehicles((current) => advanceFleet(current, elapsed, stamp));
     }, site.liveTickMs);
     return () => window.clearInterval(id);
+  }, [live]);
+
+  // ข้อมูลสดจาก Go API — ต่อสายตอน live เปิด ปิดสายตอนกดหยุด
+  // เบราว์เซอร์ต่อใหม่เองเมื่อสายหลุด และทุกครั้งที่ต่อใหม่ server ส่ง "snapshot" ก้อนเต็มมาก่อน
+  useEffect(() => {
+    if (!live || !env.fleetApiUrl) return;
+    const source = new EventSource(`${env.fleetApiUrl}/api/fleet/stream`);
+
+    const onSnapshot = (event: MessageEvent<string>) => {
+      const next = JSON.parse(event.data) as FleetSnapshot;
+      setSnapshot(next);
+      setVehicles(next.vehicles);
+    };
+    const onPatch = (event: MessageEvent<string>) => {
+      const { patches } = JSON.parse(event.data) as { patches: VehiclePatch[] };
+      setVehicles((current) => applyPatches(current, patches));
+    };
+
+    source.addEventListener("snapshot", onSnapshot);
+    source.addEventListener("patch", onPatch);
+    return () => source.close();
   }, [live]);
 
   // หยุดสตรีมเมื่อแท็บถูกซ่อน: ไม่มีใครดู ก็ไม่ต้องเผา CPU
