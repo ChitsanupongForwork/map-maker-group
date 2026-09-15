@@ -39,7 +39,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "Vehicles",
     labelTh: "ทะเบียนรถ",
     description: "รายการรถทั้งหมด ค้นหาด้วยทะเบียน ดูคนขับและกลุ่มที่สังกัด",
-    inRail: true,
+    inRail: false,
   },
   {
     href: "/reports",
@@ -47,7 +47,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "Reports",
     labelTh: "รายงาน",
     description: "สรุปการใช้งานรถรายวัน ระยะทาง ชั่วโมงเครื่องยนต์ และสถานะข้อมูล",
-    inRail: true,
+    inRail: false,
   },
   {
     href: "/export",
@@ -55,7 +55,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "Export",
     labelTh: "ส่งออกข้อมูล",
     description: "ดาวน์โหลดข้อมูลกองรถตามเงื่อนไขที่กรองไว้ เป็นไฟล์ Excel หรือ PDF",
-    inRail: true,
+    inRail: false,
   },
   {
     href: "/settings",
@@ -63,7 +63,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "Settings",
     labelTh: "ตั้งค่า",
     description: "กำหนดเกณฑ์เรียลไทม์ กลุ่มรถ พื้นที่ และการแจ้งเตือน",
-    inRail: true,
+    inRail: false,
     footer: true,
   },
 ];
